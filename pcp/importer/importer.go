@@ -1,0 +1,55 @@
+package importer
+
+import (
+	"context"
+
+	pgimporter "github.com/PlakarKorp/integrations/postgresql/importer"
+	"github.com/PlakarKorp/kloset/connectors"
+	"github.com/PlakarKorp/kloset/connectors/importer"
+	"github.com/PlakarKorp/kloset/location"
+)
+
+func init() {
+	importer.Register("pcp", location.FLAG_STREAM, NewImporter)
+}
+
+type Importer struct {
+	pgImporter importer.Importer
+}
+
+func NewImporter(appCtx context.Context, opts *connectors.Options, name string, config map[string]string) (importer.Importer, error) {
+	config["host"] = "localhost"
+	config["port"] = "8888"
+	config["username"] = "postgres"
+	config["password"] = "postgres"
+
+	pgImporter, err := pgimporter.NewImporter(appCtx, opts, name, config)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &Importer{
+		pgImporter: pgImporter,
+	}, nil
+}
+
+func (p *Importer) Import(ctx context.Context, records chan<- *connectors.Record, results <-chan *connectors.Result) error {
+	return p.pgImporter.Import(ctx, records, results)
+}
+
+func (p *Importer) Ping(ctx context.Context) error {
+	return p.pgImporter.Ping(ctx)
+}
+
+func (p *Importer) Close(ctx context.Context) error {
+	return p.pgImporter.Close(ctx)
+}
+
+func (p *Importer) Root() string   { return "/" }
+func (p *Importer) Origin() string { return "pcp" }
+func (p *Importer) Type() string   { return "pcp" }
+
+func (p *Importer) Flags() location.Flags {
+	return p.pgImporter.Flags()
+}
