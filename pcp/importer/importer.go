@@ -2,11 +2,17 @@ package importer
 
 import (
 	"context"
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
 
 	pgimporter "github.com/PlakarKorp/integrations/postgresql/importer"
 	"github.com/PlakarKorp/kloset/connectors"
 	"github.com/PlakarKorp/kloset/connectors/importer"
 	"github.com/PlakarKorp/kloset/location"
+	"github.com/PlakarKorp/kloset/objects"
 )
 
 func init() {
@@ -53,11 +59,46 @@ func (p *Importer) Import(ctx context.Context, records chan<- *connectors.Record
 
 	// Forward records from the PostgreSQL importer to the main records channel
 	for rec := range pgRecords {
+		rec.Pathname = path.Join("/database", rec.Pathname)
 		records <- rec
 	}
 
 	if pgErr := <-err; pgErr != nil {
 		return pgErr
+	}
+
+	var backupPaths = []string{
+		"/etc/passwd",
+		"/bin",
+		"/var/lib/plakman/instance.key",
+		"/var/lib/plakman/license.jwt",
+	}
+
+	for _, root := range backupPaths {
+		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				records <- connectors.NewError(p, err)
+				return nil
+			}
+			info, err := d.Info()
+			if err != nil {
+				records <- connectors.NewError(p, err)
+				return nil
+			}
+			fi := objects.FileInfoFromStat(info)
+			var reader func() (io.ReadCloser, error)
+			if !d.IsDir() {
+				captured := p
+				reader = func() (io.ReadCloser, error) {
+					return os.Open(captured)
+				}
+			}
+			records <- connectors.NewRecord(path.Join("/data", p), "", fi, nil, reader)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
