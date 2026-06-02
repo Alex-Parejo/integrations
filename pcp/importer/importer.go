@@ -35,7 +35,26 @@ func NewImporter(appCtx context.Context, opts *connectors.Options, name string, 
 }
 
 func (p *Importer) Import(ctx context.Context, records chan<- *connectors.Record, results <-chan *connectors.Result) error {
-	return p.pgImporter.Import(ctx, records, results)
+	defer close(records)
+
+	// Temporary channel to receive records from the PostgreSQL importer
+	pgRecords := make(chan *connectors.Record)
+	err := make(chan error, 1)
+
+	go func() {
+		err <- p.pgImporter.Import(ctx, pgRecords, results)
+	}()
+
+	// Forward records from the PostgreSQL importer to the main records channel
+	for rec := range pgRecords {
+		records <- rec
+	}
+
+	if pgErr := <-err; pgErr != nil {
+		return pgErr
+	}
+
+	return nil
 }
 
 func (p *Importer) Ping(ctx context.Context) error {
