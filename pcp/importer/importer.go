@@ -37,6 +37,12 @@ func NewImporter(appCtx context.Context, opts *connectors.Options, name string, 
 func (p *Importer) Import(ctx context.Context, records chan<- *connectors.Record, results <-chan *connectors.Result) error {
 	defer close(records)
 
+	// results is passed directly to the sub-importer, which is safe because it
+	// never reads from it (not stream-based, no ack needed). If we were chaining
+	// multiple sub-importers and one of them consumed acks, passing results directly
+	// would be incorrect: acks would need to be relayed one-per-record to whichever
+	// sub-importer is currently active.
+
 	// Temporary channel to receive records from the PostgreSQL importer
 	pgRecords := make(chan *connectors.Record)
 	err := make(chan error, 1)
